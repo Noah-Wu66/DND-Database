@@ -17,17 +17,19 @@ router.get('/sessions/:sessionId', async (req, res, next) => {
     if (!session) {
       session = new Session({
         sessionId,
-        monsters: {}
+        monsters: {},
+        monsterOrder: [] // 初始化为空数组
       });
       await session.save();
     }
     
-    // 返回会话数据
+    // 返回会话数据，包含怪物顺序
     res.json({
       success: true,
       data: {
         sessionId: session.sessionId,
         monsters: session.monsters,
+        monsterOrder: session.monsterOrder || [], // 确保有返回顺序数据
         lastUpdated: session.lastUpdated
       }
     });
@@ -45,7 +47,7 @@ router.get('/sessions/:sessionId', async (req, res, next) => {
 router.post('/sessions/:sessionId', async (req, res, next) => {
   try {
     const { sessionId } = req.params;
-    const { monsters } = req.body;
+    const { monsters, monsterOrder } = req.body;
     
     if (!monsters) {
       return res.status(400).json({
@@ -54,13 +56,21 @@ router.post('/sessions/:sessionId', async (req, res, next) => {
       });
     }
     
+    // 构建更新数据对象
+    const updateData = {
+      monsters,
+      lastUpdated: Date.now()
+    };
+    
+    // 如果提供了怪物顺序，也更新它
+    if (monsterOrder && Array.isArray(monsterOrder)) {
+      updateData.monsterOrder = monsterOrder;
+    }
+    
     // 更新或创建会话
     const session = await Session.findOneAndUpdate(
       { sessionId },
-      {
-        monsters,
-        lastUpdated: Date.now()
-      },
+      updateData,
       {
         new: true,
         upsert: true
@@ -69,7 +79,8 @@ router.post('/sessions/:sessionId', async (req, res, next) => {
     
     // 通过Socket.io通知其他客户端(在server.js中处理)
     req.app.get('io')?.to(sessionId).emit('session-updated', {
-      monsters: session.monsters
+      monsters: session.monsters,
+      monsterOrder: session.monsterOrder
     });
     
     res.json({
