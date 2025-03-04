@@ -20,6 +20,9 @@ const io = socketIo(server, {
   }
 });
 
+// 将io实例保存到app中以便在路由中使用
+app.set('io', io);
+
 // 连接数据库
 connectDB();
 
@@ -55,6 +58,42 @@ io.on('connection', (socket) => {
     if (data && data.sessionId && data.monster) {
       console.log(`Monster update in ${data.sessionId}: ${data.monster.id}`);
       socket.to(data.sessionId).emit('monster-updated', data.monster);
+    }
+  });
+  
+  socket.on('delete-monster', (data) => {
+    if (data && data.sessionId && data.monsterId) {
+      console.log(`Monster deleted in ${data.sessionId}: ${data.monsterId}`);
+      socket.to(data.sessionId).emit('delete-monster', {
+        monsterId: data.monsterId
+      });
+    }
+  });
+  
+  socket.on('session-update', (data) => {
+    if (data && data.sessionId && data.data) {
+      console.log(`Session update in ${data.sessionId}`);
+      socket.to(data.sessionId).emit('session-updated', data.data);
+    }
+  });
+  
+  // 新增：处理怪物卡片顺序变更
+  socket.on('reorder-monsters', (data) => {
+    if (data && data.sessionId && data.order) {
+      console.log(`Monster order update in ${data.sessionId}`);
+      
+      // 广播顺序更新事件给其他客户端
+      socket.to(data.sessionId).emit('monsters-reordered', {
+        order: data.order
+      });
+      
+      // 更新数据库中的顺序
+      const Session = require('./models/session');
+      Session.findOneAndUpdate(
+        { sessionId: data.sessionId },
+        { monsterOrder: data.order, lastUpdated: Date.now() },
+        { new: true }
+      ).catch(err => console.error('Error updating monster order:', err));
     }
   });
   
