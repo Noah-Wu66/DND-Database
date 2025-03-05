@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 const battlesRoutes = require('./routes/battles');
-const diceRoutes = require('./routes/dice'); // 新增骰子路由
+const diceRoutes = require('./routes/dice'); // 骰子路由
 const errorHandler = require('./middlewares/errorHandler');
 const connectDB = require('./config/database');
 
@@ -45,11 +45,16 @@ app.get('/', (req, res) => {
 
 // API路由
 app.use('/api/v1/battles', battlesRoutes);
-app.use('/api/v1/dice', diceRoutes); // 新增骰子API路由
+app.use('/api/v1/dice', diceRoutes); // 骰子API路由
+
+// 存储骰子会话历史记录的内存缓存
+const diceSessionHistory = {};
 
 // WebSocket处理
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+  let joinedDiceSession = null;
+  let playerName = null;
   
   // 战斗助手相关事件
   socket.on('join-session', (sessionId) => {
@@ -99,28 +104,67 @@ io.on('connection', (socket) => {
     }
   });
   
-  // 骰子模拟器相关事件
-  socket.on('join-dice-session', (sessionId) => {
-    console.log(`Client ${socket.id} joined dice session: ${sessionId}`);
-    socket.join(sessionId);
+  // 骰子模拟器相关事件 - 改进版
+  socket.on('join-dice-session', (data) => {
+    if (!data || !data.sessionId) return;
+    
+    joinedDiceSession = data.sessionId;
+    playerName = data.playerName || "未知玩家";
+    
+    console.log(`Client ${socket.id} (${playerName}) joined dice session: ${joinedDiceSession}`);
+    socket.join(joinedDiceSession);
+    
+    // 如果存在历史记录，发送给新加入的客户端
+    if (diceSessionHistory[joinedDiceSession]) {
+      socket.emit('roll-history-sync', diceSessionHistory[joinedDiceSession]);
+    }
   });
   
   socket.on('update-dice-state', (data) => {
     if (data && data.sessionId && data.diceState) {
-      console.log(`Dice state update in ${data.sessionId}`);
+      console.log(`Dice state update in ${data.sessionId} by ${data.playerName || 'unknown'}`);
       socket.to(data.sessionId).emit('dice-state-updated', data.diceState);
     }
   });
   
   socket.on('roll-dice', (data) => {
-    if (data && data.sessionId && data.rollResults) {
-      console.log(`Dice roll in ${data.sessionId}`);
-      socket.to(data.sessionId).emit('dice-rolled', data.rollResults);
+    if (data && data.sessionId && data.rollData) {
+      console.log(`Dice roll in ${data.sessionId} by ${data.rollData.playerName || 'unknown'}`);
+      
+      // 存储骰子结果到历史记录
+      if (!diceSessionHistory[data.sessionId]) {
+        diceSessionHistory[data.sessionId] = [];
+      }
+      
+      // 限制历史记录大小
+      if (diceSessionHistory[data.sessionId].length >= 20) {
+        diceSessionHistory[data.sessionId].shift(); // 移除最旧的记录
+      }
+      
+      diceSessionHistory[data.sessionId].push(data.rollData);
+      
+      // 广播骰子结果给其他玩家
+      socket.to(data.sessionId).emit('dice-rolled', data.rollData);
+    }
+  });
+  
+  socket.on('reset-dice', (data) => {
+    if (data && data.sessionId) {
+      console.log(`Dice reset in ${data.sessionId} by ${data.playerName || 'unknown'}`);
+      
+      // 清空这个会话的历史记录
+      if (diceSessionHistory[data.sessionId]) {
+        diceSessionHistory[data.sessionId] = [];
+      }
+      
+      // 广播重置事件给其他客户端
+      socket.to(data.sessionId).emit('reset-dice');
     }
   });
   
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
+    joinedDiceSession = null;
   });
 });
 
