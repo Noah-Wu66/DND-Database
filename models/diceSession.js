@@ -11,6 +11,10 @@ const DiceSessionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
+  rollHistory: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: []
+  },
   lastUpdated: {
     type: Date,
     default: Date.now
