@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 const battlesRoutes = require('./routes/battles');
+const diceRoutes = require('./routes/dice'); // 新增骰子路由
 const errorHandler = require('./middlewares/errorHandler');
 const connectDB = require('./config/database');
 
@@ -44,13 +45,15 @@ app.get('/', (req, res) => {
 
 // API路由
 app.use('/api/v1/battles', battlesRoutes);
+app.use('/api/v1/dice', diceRoutes); // 新增骰子API路由
 
 // WebSocket处理
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   
+  // 战斗助手相关事件
   socket.on('join-session', (sessionId) => {
-    console.log(`Client ${socket.id} joined session: ${sessionId}`);
+    console.log(`Client ${socket.id} joined battle session: ${sessionId}`);
     socket.join(sessionId);
   });
   
@@ -77,7 +80,6 @@ io.on('connection', (socket) => {
     }
   });
   
-  // 新增：处理怪物卡片顺序变更
   socket.on('reorder-monsters', (data) => {
     if (data && data.sessionId && data.order) {
       console.log(`Monster order update in ${data.sessionId}`);
@@ -94,6 +96,26 @@ io.on('connection', (socket) => {
         { monsterOrder: data.order, lastUpdated: Date.now() },
         { new: true }
       ).catch(err => console.error('Error updating monster order:', err));
+    }
+  });
+  
+  // 骰子模拟器相关事件
+  socket.on('join-dice-session', (sessionId) => {
+    console.log(`Client ${socket.id} joined dice session: ${sessionId}`);
+    socket.join(sessionId);
+  });
+  
+  socket.on('update-dice-state', (data) => {
+    if (data && data.sessionId && data.diceState) {
+      console.log(`Dice state update in ${data.sessionId}`);
+      socket.to(data.sessionId).emit('dice-state-updated', data.diceState);
+    }
+  });
+  
+  socket.on('roll-dice', (data) => {
+    if (data && data.sessionId && data.rollResults) {
+      console.log(`Dice roll in ${data.sessionId}`);
+      socket.to(data.sessionId).emit('dice-rolled', data.rollResults);
     }
   });
   
